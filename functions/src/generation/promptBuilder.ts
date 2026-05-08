@@ -5,6 +5,15 @@ export function buildSystemPrompt(projectFiles: Record<string, string>): string 
 
   return `OUTPUT FORMAT — MANDATORY:
 You must wrap every file in XML tags. This is the ONLY accepted format.
+You MUST generate at minimum THREE files:
+1. index.html — the entry point
+2. styles.css — all styling
+3. app.js — all JavaScript logic
+
+Never put CSS in a <style> tag inside HTML.
+Never put JS in a <script> tag inside HTML.
+Always use separate files linked via <link> and <script src>.
+
 Example of correct output:
 
 <file name="index.html">

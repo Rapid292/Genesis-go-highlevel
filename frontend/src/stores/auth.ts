@@ -7,7 +7,7 @@ import {
   signOut,
   type User,
 } from 'firebase/auth'
-import { doc, onSnapshot, type Unsubscribe } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, type Unsubscribe } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 
 type UserDocument = {
@@ -108,6 +108,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function reloadHLStatus() {
+    if (!user.value) {
+      return
+    }
+
+    const snapshot = await getDoc(doc(db, 'users', user.value.uid))
+    const data = snapshot.data() as UserDocument | undefined
+    const token = data?.hlToken
+
+    hlConnected.value = !!token?.accessToken
+    hlLocationName.value = token?.locationName || ''
+  }
+
   return {
     user,
     hlConnected,
@@ -118,5 +131,6 @@ export const useAuthStore = defineStore('auth', () => {
     signUp,
     signIn,
     logOut,
+    reloadHLStatus,
   }
 })

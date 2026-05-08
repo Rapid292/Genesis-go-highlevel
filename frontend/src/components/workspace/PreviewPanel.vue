@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { auth } from '@/lib/firebase'
 import { useGenerationStore } from '@/stores/generation'
@@ -115,21 +115,22 @@ ${scriptClose}`
 
 watch(
   () => generationStore.isGenerating,
-  (isGenerating, wasGenerating) => {
+  async (isGenerating, wasGenerating) => {
     if (wasGenerating && !isGenerating) {
-      void buildPreview()
+      await nextTick()
+      await buildPreview()
     }
   },
 )
 
 watch(
   () => projectStore.currentFiles,
-  (files) => {
-    if (Object.keys(files).length) {
-      void buildPreview()
+  async (files) => {
+    if (Object.keys(files).length > 0 && !generationStore.isGenerating) {
+      await buildPreview()
     }
   },
-  { deep: true, once: true },
+  { deep: true },
 )
 </script>
 

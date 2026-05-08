@@ -3,7 +3,7 @@
 ## Live URLs
 - **Frontend:** https://genesis-ghl.web.app
 - **Functions base:** https://us-central1-genesis-ghl.cloudfunctions.net
-- **Loom walkthrough:** [TO BE ADDED]
+- **Loom walkthrough:** https://www.loom.com/share/79d3a46e5a8742bb865fe285ce87b855
 
 ## HighLevel Setup
 1. Go to developers.gohighlevel.com → your marketplace app

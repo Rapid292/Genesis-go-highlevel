@@ -27,7 +27,7 @@ export const generateApp = onRequest(
     invoker: "public",
     timeoutSeconds: 540,
     memory: "1GiB",
-    secrets: ["REQUESTY_API_KEY", "ENCRYPTION_KEY"],
+    secrets: [],
   },
   async (req, res) => {
     if (req.method === "OPTIONS") {

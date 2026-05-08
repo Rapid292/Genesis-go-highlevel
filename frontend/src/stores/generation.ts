@@ -3,22 +3,10 @@ import { defineStore } from 'pinia'
 import { GENERATE_URL, getToken } from '@/lib/api'
 
 type ChatMessage = {
+  id?: number
   role: 'user' | 'assistant'
   content: string
   apisUsed?: string[]
-}
-
-type SSEEvent = {
-  event: string
-  data: string
-}
-
-function parseData(data: string) {
-  try {
-    return JSON.parse(data)
-  } catch {
-    return data
-  }
 }
 
 export const useGenerationStore = defineStore('generation', () => {
@@ -28,59 +16,6 @@ export const useGenerationStore = defineStore('generation', () => {
   const chatMessages = ref<ChatMessage[]>([])
   const lastSnapshotId = ref<string | null>(null)
   const error = ref('')
-
-  function handleEvent(sseEvent: SSEEvent) {
-    const data = parseData(sseEvent.data)
-
-    if (sseEvent.event === 'token') {
-      streamedOutput.value += typeof data === 'string' ? data : data.chunk || data.token || ''
-      return
-    }
-
-    if (sseEvent.event === 'apis_used') {
-      apisUsed.value = Array.isArray(data.apis) ? data.apis : []
-      return
-    }
-
-    if (sseEvent.event === 'done') {
-      if (typeof data === 'object' && data !== null && Array.isArray(data.apisUsed)) {
-        apisUsed.value = data.apisUsed
-      }
-
-      chatMessages.value.push({
-        role: 'assistant',
-        content: streamedOutput.value,
-        apisUsed: [...apisUsed.value],
-      })
-      lastSnapshotId.value = typeof data === 'object' && data !== null ? data.snapshotId || null : null
-      isGenerating.value = false
-      return
-    }
-
-    if (sseEvent.event === 'error') {
-      error.value = typeof data === 'object' && data !== null ? data.message || 'Generation failed' : String(data)
-      isGenerating.value = false
-    }
-  }
-
-  function parseSSEBlock(block: string): SSEEvent | null {
-    let event = 'message'
-    const dataLines: string[] = []
-
-    for (const line of block.split('\n')) {
-      if (line.startsWith('event:')) {
-        event = line.slice(6).trim()
-      } else if (line.startsWith('data:')) {
-        dataLines.push(line.slice(5).trimStart())
-      }
-    }
-
-    if (!dataLines.length) {
-      return null
-    }
-
-    return { event, data: dataLines.join('\n') }
-  }
 
   async function generate(projectId: string, prompt: string) {
     isGenerating.value = true
@@ -115,34 +50,84 @@ export const useGenerationStore = defineStore('generation', () => {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let currentEvent = ''
 
       while (true) {
         const { done, value } = await reader.read()
-
-        if (done) {
-          break
-        }
+        if (done) break
 
         buffer += decoder.decode(value, { stream: true })
-        const blocks = buffer.split(/\n\n/)
-        buffer = blocks.pop() || ''
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
 
-        for (const block of blocks) {
-          const event = parseSSEBlock(block)
+        for (const rawLine of lines) {
+          const line = rawLine.replace(/\r$/, '')
 
-          if (event) {
-            handleEvent(event)
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim()
+          } else if (line.startsWith('data: ')) {
+            const raw = line.slice(6).trim()
+            if (!raw || raw === '[DONE]') continue
+
+            try {
+              const data = JSON.parse(raw)
+
+              if (currentEvent === 'token') {
+                streamedOutput.value += data.chunk || ''
+              } else if (currentEvent === 'apis_used') {
+                apisUsed.value = data.apis || []
+              } else if (currentEvent === 'done') {
+                lastSnapshotId.value = data.snapshotId
+                chatMessages.value.push({
+                  id: Date.now(),
+                  role: 'assistant',
+                  content: `Generated ${data.filesChanged} file(s).`,
+                  apisUsed: data.apisUsed || [],
+                })
+                isGenerating.value = false
+              } else if (currentEvent === 'error') {
+                error.value = data.message || 'Generation failed'
+                isGenerating.value = false
+              }
+            } catch (parseError) {
+              console.warn('SSE parse error:', parseError, 'raw:', raw)
+            }
+
+            currentEvent = ''
           }
         }
       }
 
       buffer += decoder.decode()
-
       if (buffer.trim()) {
-        const event = parseSSEBlock(buffer)
+        const line = buffer.trim().replace(/\r$/, '')
 
-        if (event) {
-          handleEvent(event)
+        if (line.startsWith('data: ') && currentEvent) {
+          const raw = line.slice(6).trim()
+
+          try {
+            const data = JSON.parse(raw)
+
+            if (currentEvent === 'token') {
+              streamedOutput.value += data.chunk || ''
+            } else if (currentEvent === 'apis_used') {
+              apisUsed.value = data.apis || []
+            } else if (currentEvent === 'done') {
+              lastSnapshotId.value = data.snapshotId
+              chatMessages.value.push({
+                id: Date.now(),
+                role: 'assistant',
+                content: `Generated ${data.filesChanged} file(s).`,
+                apisUsed: data.apisUsed || [],
+              })
+              isGenerating.value = false
+            } else if (currentEvent === 'error') {
+              error.value = data.message || 'Generation failed'
+              isGenerating.value = false
+            }
+          } catch (parseError) {
+            console.warn('SSE parse error:', parseError, 'raw:', raw)
+          }
         }
       }
     } catch (generationError) {

@@ -11,20 +11,24 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import { useGenerationStore } from '@/stores/generation'
 
 const props = defineProps<{
   projectId: string
 }>()
 
 type TimestampLike = {
-  seconds: number
-  nanoseconds: number
+  seconds?: number
+  nanoseconds?: number
+  _seconds?: number
+  _nanoseconds?: number
 }
 
 type Snapshot = {
   id: string
   prompt?: string
   createdAt?: TimestampLike | string
+  apisUsed?: string[]
 }
 
 type SnapshotsResponse = {
@@ -36,22 +40,21 @@ const snapshots = ref<Snapshot[]>([])
 const loading = ref(false)
 const restoringId = ref<string | null>(null)
 const error = ref('')
+const generationStore = useGenerationStore()
 
-function formatDate(value: Snapshot['createdAt']) {
-  if (!value) {
-    return 'Unknown date'
+function formatDate(ts: Snapshot['createdAt']): string {
+  if (!ts) return 'Unknown date'
+
+  if (typeof ts === 'object' && ts._seconds) {
+    return new Date(ts._seconds * 1000).toLocaleString()
   }
 
-  const date =
-    typeof value === 'string'
-      ? new Date(value)
-      : new Date(value.seconds * 1000 + Math.floor(value.nanoseconds / 1_000_000))
-
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown date'
+  if (typeof ts === 'object' && ts.seconds) {
+    return new Date(ts.seconds * 1000).toLocaleString()
   }
 
-  return date.toLocaleString()
+  const date = new Date(ts as string)
+  return Number.isNaN(date.getTime()) ? 'Unknown date' : date.toLocaleString()
 }
 
 async function loadSnapshots() {
@@ -78,6 +81,12 @@ async function restore(snapshot: Snapshot) {
 
   try {
     await api.restoreSnapshot(props.projectId, snapshot.id)
+    generationStore.chatMessages.push({
+      id: Date.now(),
+      role: 'assistant',
+      content: `Restored snapshot from ${formatDate(snapshot.createdAt)}. Prompt was: "${snapshot.prompt}"`,
+      apisUsed: snapshot.apisUsed || [],
+    })
     open.value = false
   } catch (restoreError) {
     error.value = restoreError instanceof Error ? restoreError.message : 'Unable to restore snapshot'

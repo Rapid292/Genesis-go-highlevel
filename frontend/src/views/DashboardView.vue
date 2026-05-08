@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import { auth, waitForUser } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/auth'
 import { useProjectStore, type Project } from '@/stores/project'
 
@@ -21,6 +22,8 @@ const description = ref('')
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | ''>('')
 const isCreating = ref(false)
+const isConnectingHL = ref(false)
+const isSigningOut = ref(false)
 
 const canCreate = computed(() => !!name.value.trim() && !isCreating.value)
 
@@ -45,12 +48,21 @@ function formatDate(value: Project['createdAt']) {
   }).format(date)
 }
 
-function connectHighLevel() {
-  if (!authStore.user) {
+async function connectHighLevel() {
+  isConnectingHL.value = true
+  statusMessage.value = ''
+  statusType.value = ''
+
+  const firebaseUser = authStore.user || auth.currentUser || (await waitForUser())
+
+  if (!firebaseUser) {
+    isConnectingHL.value = false
+    statusMessage.value = 'Sign in again before connecting HighLevel.'
+    statusType.value = 'error'
     return
   }
 
-  window.location.href = api.getHLAuthUrl(authStore.user.uid)
+  window.location.assign(api.getHLAuthUrl(firebaseUser.uid))
 }
 
 async function createProject() {
@@ -76,8 +88,25 @@ async function deleteProject(project: Project) {
   await projectStore.deleteProject(project.id)
 }
 
+async function handleSignOut() {
+  isSigningOut.value = true
+  statusMessage.value = ''
+  statusType.value = ''
+
+  try {
+    await authStore.logOut()
+    await router.replace('/auth')
+  } catch (signOutError) {
+    statusMessage.value = signOutError instanceof Error ? signOutError.message : 'Unable to sign out'
+    statusType.value = 'error'
+  } finally {
+    isSigningOut.value = false
+  }
+}
+
 onMounted(async () => {
   if (route.query.hl_connected === 'true') {
+    await authStore.reloadHLStatus()
     statusMessage.value = 'HighLevel connected.'
     statusType.value = 'success'
   }
@@ -105,11 +134,11 @@ onMounted(async () => {
           <Badge v-if="authStore.hlConnected" variant="secondary">
             {{ `✓ ${authStore.hlLocationName || 'HighLevel'}` }}
           </Badge>
-          <Button v-else type="button" variant="outline" @click="connectHighLevel">
-            Connect HighLevel
+          <Button v-else type="button" variant="outline" :disabled="isConnectingHL" @click="connectHighLevel">
+            {{ isConnectingHL ? 'Connecting...' : 'Connect HighLevel' }}
           </Button>
-          <Button type="button" variant="ghost" @click="authStore.logOut">
-            Sign out
+          <Button type="button" variant="ghost" :disabled="isSigningOut" @click="handleSignOut">
+            {{ isSigningOut ? 'Signing out...' : 'Sign out' }}
           </Button>
         </div>
       </div>
